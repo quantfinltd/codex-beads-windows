@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Set CODEX_BEAD_ACTIVATE_POETRY=1 to opt into Poetry environment activation.
-# Leave it unset to run the launcher without Poetry installed.
+# Automatically activate a Poetry-managed environment when one can be
+# resolved for the current repository. Repositories without Poetry stay on the
+# normal PATH.
 
 fail() {
   echo "ERROR: $*" >&2
@@ -13,22 +14,16 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
-should_activate_poetry() {
-  case "${CODEX_BEAD_ACTIVATE_POETRY:-}" in
-    1|true|TRUE|yes|YES|on|ON) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-activate_poetry_env() {
-  require_cmd poetry
+activate_poetry_env_if_available() {
+  [[ -f "$REPO_ROOT/pyproject.toml" ]] || return 0
+  command -v poetry >/dev/null 2>&1 || return 0
 
   local poetry_env
-  poetry_env="$(poetry env info --path 2>/dev/null)" || fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment could not be resolved. Leave it unset to run without Poetry."
+  poetry_env="$(poetry env info --path 2>/dev/null)" || return 0
   if [[ "$poetry_env" =~ ^[A-Za-z]:\\ ]] && command -v cygpath >/dev/null 2>&1; then
     poetry_env="$(cygpath -u "$poetry_env")"
   fi
-  [[ -d "$poetry_env" ]] || fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment does not exist: $poetry_env"
+  [[ -n "$poetry_env" && -d "$poetry_env" ]] || return 0
 
   local venv_bin
   if [[ -d "$poetry_env/bin" ]]; then
@@ -36,7 +31,7 @@ activate_poetry_env() {
   elif [[ -d "$poetry_env/Scripts" ]]; then
     venv_bin="$poetry_env/Scripts"
   else
-    fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but no executable directory exists under $poetry_env"
+    return 0
   fi
 
   export VIRTUAL_ENV="$poetry_env"
@@ -118,9 +113,7 @@ echo "Claimed bead: $CLAIMED_ID"
 echo "Base branch: $BASE_BRANCH"
 echo "Worktree: $WORKTREE_PATH"
 
-if should_activate_poetry; then
-  activate_poetry_env
-fi
+activate_poetry_env_if_available
 
 export BEADS_DIR="$REPO_ROOT"
 

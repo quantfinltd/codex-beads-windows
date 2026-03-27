@@ -1,8 +1,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Set CODEX_BEAD_ACTIVATE_POETRY=1 to opt into Poetry environment activation.
-# Leave it unset to run the launcher without Poetry installed.
+# Automatically activate a Poetry-managed environment when one can be
+# resolved for the current repository. Repositories without Poetry stay on the
+# normal PATH.
 
 function Fail {
     param([string]$Message)
@@ -19,28 +20,18 @@ function Require-Command {
     }
 }
 
-function Test-TruthyValue {
-    param([string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $false
+function Enable-PoetryActivationIfAvailable {
+    if (-not (Test-Path (Join-Path $repoRoot 'pyproject.toml'))) {
+        return
     }
 
-    switch ($Value.Trim().ToLowerInvariant()) {
-        '1' { return $true }
-        'true' { return $true }
-        'yes' { return $true }
-        'on' { return $true }
-        default { return $false }
+    if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
+        return
     }
-}
 
-function Enable-PoetryActivation {
-    Require-Command poetry
-
-    $poetryEnv = (& poetry env info --path 2>&1 | Out-String).Trim()
+    $poetryEnv = (& poetry env info --path 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($poetryEnv) -or -not (Test-Path $poetryEnv)) {
-        Fail 'Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment could not be resolved. Leave it unset to run without Poetry.'
+        return
     }
 
     $venvBin = Join-Path $poetryEnv 'Scripts'
@@ -48,7 +39,7 @@ function Enable-PoetryActivation {
         $venvBin = Join-Path $poetryEnv 'bin'
     }
     if (-not (Test-Path $venvBin)) {
-        Fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but no executable directory exists under $poetryEnv"
+        return
     }
 
     $env:VIRTUAL_ENV = $poetryEnv
@@ -141,9 +132,7 @@ Write-Host "Claimed bead: $claimedId"
 Write-Host "Base branch: $baseBranch"
 Write-Host "Worktree: $worktreePath"
 
-if (Test-TruthyValue $env:CODEX_BEAD_ACTIVATE_POETRY) {
-    Enable-PoetryActivation
-}
+Enable-PoetryActivationIfAvailable
 
 $env:BEADS_DIR=$repoRoot
 
