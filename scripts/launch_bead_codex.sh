@@ -124,4 +124,4 @@ fi
 
 export BEADS_DIR="$REPO_ROOT"
 
-codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it"
+codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it, close the bead when you're done"

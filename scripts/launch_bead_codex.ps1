@@ -147,5 +147,5 @@ if (Test-TruthyValue $env:CODEX_BEAD_ACTIVATE_POETRY) {
 
 $env:BEADS_DIR=$repoRoot
 
-$prompt = "bead $claimedId has been claimed for you to work on in the current git branch and worktree, please work on it"
+$prompt = "bead $claimedId has been claimed for you to work on in the current git branch and worktree, please work on it, close the bead when you're done"
 codex --cd $worktreeRel $prompt
