@@ -10,4 +10,3 @@ if not exist "%POWERSHELL_LAUNCHER%" (
 )
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%POWERSHELL_LAUNCHER%" %*
-exit /b %ERRORLEVEL%
