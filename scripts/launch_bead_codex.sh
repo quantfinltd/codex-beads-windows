@@ -122,4 +122,6 @@ if should_activate_poetry; then
   activate_poetry_env
 fi
 
+export BEADS_DIR="$REPO_ROOT"
+
 codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it"
