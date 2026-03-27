@@ -47,14 +47,6 @@ for cmd in bd codex; do
   require_cmd "$cmd"
 done
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN=python
-else
-  fail "Missing required command: python3 (or python) for parsing bd JSON output."
-fi
-
 BASE_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" || fail "Detached HEAD detected. Check out a branch before launching Codex."
 
 CLAIMED_ID=""
@@ -67,12 +59,11 @@ for attempt in 1 2 3; do
   while IFS= read -r candidate_id; do
     [[ -n "$candidate_id" ]] && CANDIDATE_IDS+=("$candidate_id")
   done < <(
-    "$PYTHON_BIN" -c 'import json, sys
-data = json.load(sys.stdin)
-if isinstance(data, list):
-    for item in data:
-        if isinstance(item, dict) and item.get("id"):
-            print(item["id"])' <<<"$READY_JSON"
+    {
+      printf '%s\n' "$READY_JSON" |
+        grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' |
+        sed -E 's/^"id"[[:space:]]*:[[:space:]]*"//; s/"$//'
+    } || true
   )
 
   if ((${#CANDIDATE_IDS[@]} == 0)); then
@@ -118,3 +109,4 @@ activate_poetry_env_if_available
 export BEADS_DIR="$REPO_ROOT"
 
 codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it, close the bead when you're done"
+
