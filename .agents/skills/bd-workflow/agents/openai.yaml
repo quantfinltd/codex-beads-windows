@@ -1,0 +1,4 @@
+interface:
+  display_name: "BD Workflow"
+  short_description: "Run concise, correct beads issue workflows with bd"
+  default_prompt: "Use this skill to perform beads issue operations quickly and correctly in this repo."
