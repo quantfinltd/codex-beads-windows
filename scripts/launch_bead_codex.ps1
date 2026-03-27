@@ -1,6 +1,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Set CODEX_BEAD_ACTIVATE_POETRY=1 to opt into Poetry environment activation.
+# Leave it unset to run the launcher without Poetry installed.
+
 function Fail {
     param([string]$Message)
 
@@ -16,6 +19,43 @@ function Require-Command {
     }
 }
 
+function Test-TruthyValue {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        'on' { return $true }
+        default { return $false }
+    }
+}
+
+function Enable-PoetryActivation {
+    Require-Command poetry
+
+    $poetryEnv = (& poetry env info --path 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($poetryEnv) -or -not (Test-Path $poetryEnv)) {
+        Fail 'Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment could not be resolved. Leave it unset to run without Poetry.'
+    }
+
+    $venvBin = Join-Path $poetryEnv 'Scripts'
+    if (-not (Test-Path $venvBin)) {
+        $venvBin = Join-Path $poetryEnv 'bin'
+    }
+    if (-not (Test-Path $venvBin)) {
+        Fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but no executable directory exists under $poetryEnv"
+    }
+
+    $env:VIRTUAL_ENV = $poetryEnv
+    $env:POETRY_ACTIVE = '1'
+    $env:PATH = "$venvBin;$env:PATH"
+}
+
 Require-Command git
 $repoRoot = (& git rev-parse --show-toplevel 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
@@ -24,26 +64,13 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
 
 Set-Location $repoRoot
 
-foreach ($commandName in 'bd', 'codex', 'poetry') {
+foreach ($commandName in 'bd', 'codex') {
     Require-Command $commandName
 }
 
 $baseBranch = (& git symbolic-ref --quiet --short HEAD 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($baseBranch)) {
     Fail 'Detached HEAD detected. Check out a branch before launching Codex.'
-}
-
-$poetryEnv = (& poetry env info --path 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($poetryEnv) -or -not (Test-Path $poetryEnv)) {
-    Fail 'Unable to resolve the Poetry environment for this repo.'
-}
-
-$venvBin = Join-Path $poetryEnv 'Scripts'
-if (-not (Test-Path $venvBin)) {
-    $venvBin = Join-Path $poetryEnv 'bin'
-}
-if (-not (Test-Path $venvBin)) {
-    Fail "Poetry environment executable directory does not exist under $poetryEnv"
 }
 
 $claimedId = $null
@@ -114,9 +141,9 @@ Write-Host "Claimed bead: $claimedId"
 Write-Host "Base branch: $baseBranch"
 Write-Host "Worktree: $worktreePath"
 
-$env:VIRTUAL_ENV = $poetryEnv
-$env:POETRY_ACTIVE = '1'
-$env:PATH = "$venvBin;$env:PATH"
+if (Test-TruthyValue $env:CODEX_BEAD_ACTIVATE_POETRY) {
+    Enable-PoetryActivation
+}
 
 $prompt = "bead $claimedId has been claimed for you to work on in the current git branch and worktree, please work on it"
 codex --cd $worktreeRel $prompt

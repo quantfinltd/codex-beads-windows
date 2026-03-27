@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Set CODEX_BEAD_ACTIVATE_POETRY=1 to opt into Poetry environment activation.
+# Leave it unset to run the launcher without Poetry installed.
+
 fail() {
   echo "ERROR: $*" >&2
   exit 1
@@ -10,11 +13,42 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+should_activate_poetry() {
+  case "${CODEX_BEAD_ACTIVATE_POETRY:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+activate_poetry_env() {
+  require_cmd poetry
+
+  local poetry_env
+  poetry_env="$(poetry env info --path 2>/dev/null)" || fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment could not be resolved. Leave it unset to run without Poetry."
+  if [[ "$poetry_env" =~ ^[A-Za-z]:\\ ]] && command -v cygpath >/dev/null 2>&1; then
+    poetry_env="$(cygpath -u "$poetry_env")"
+  fi
+  [[ -d "$poetry_env" ]] || fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but the environment does not exist: $poetry_env"
+
+  local venv_bin
+  if [[ -d "$poetry_env/bin" ]]; then
+    venv_bin="$poetry_env/bin"
+  elif [[ -d "$poetry_env/Scripts" ]]; then
+    venv_bin="$poetry_env/Scripts"
+  else
+    fail "Poetry activation was requested via CODEX_BEAD_ACTIVATE_POETRY, but no executable directory exists under $poetry_env"
+  fi
+
+  export VIRTUAL_ENV="$poetry_env"
+  export POETRY_ACTIVE=1
+  export PATH="$venv_bin:$PATH"
+}
+
 require_cmd git
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Not inside a git repository."
 cd "$REPO_ROOT"
 
-for cmd in bd codex poetry; do
+for cmd in bd codex; do
   require_cmd "$cmd"
 done
 
@@ -27,19 +61,6 @@ else
 fi
 
 BASE_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" || fail "Detached HEAD detected. Check out a branch before launching Codex."
-POETRY_ENV="$(poetry env info --path 2>/dev/null)" || fail "Unable to resolve the Poetry environment for this repo."
-if [[ "$POETRY_ENV" =~ ^[A-Za-z]:\\ ]] && command -v cygpath >/dev/null 2>&1; then
-  POETRY_ENV="$(cygpath -u "$POETRY_ENV")"
-fi
-[[ -d "$POETRY_ENV" ]] || fail "Poetry environment does not exist: $POETRY_ENV"
-
-if [[ -d "$POETRY_ENV/bin" ]]; then
-  VENV_BIN="$POETRY_ENV/bin"
-elif [[ -d "$POETRY_ENV/Scripts" ]]; then
-  VENV_BIN="$POETRY_ENV/Scripts"
-else
-  fail "Poetry environment executable directory does not exist under $POETRY_ENV"
-fi
 
 CLAIMED_ID=""
 LAST_ERROR=""
@@ -97,8 +118,8 @@ echo "Claimed bead: $CLAIMED_ID"
 echo "Base branch: $BASE_BRANCH"
 echo "Worktree: $WORKTREE_PATH"
 
-export VIRTUAL_ENV="$POETRY_ENV"
-export POETRY_ACTIVE=1
-export PATH="$VENV_BIN:$PATH"
+if should_activate_poetry; then
+  activate_poetry_env
+fi
 
 codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it"
