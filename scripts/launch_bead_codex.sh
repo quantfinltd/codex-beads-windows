@@ -43,7 +43,7 @@ require_cmd git
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Not inside a git repository."
 cd "$REPO_ROOT"
 
-for cmd in bd codex; do
+for cmd in bd codex jq; do
   require_cmd "$cmd"
 done
 
@@ -53,17 +53,29 @@ CLAIMED_ID=""
 LAST_ERROR=""
 
 for attempt in 1 2 3; do
-  READY_JSON="$(bd ready --json 2>&1)" || fail "bd ready --json failed: $READY_JSON"
+  READY_STDERR_FILE="$(mktemp)" || fail "Failed to allocate temporary file for bd ready stderr."
+  if ! READY_JSON="$(bd ready --json 2>"$READY_STDERR_FILE")"; then
+    READY_ERROR="$(<"$READY_STDERR_FILE")"
+    rm -f "$READY_STDERR_FILE"
+    fail "bd ready --json failed: ${READY_ERROR:-$READY_JSON}"
+  fi
+  if [[ -s "$READY_STDERR_FILE" ]]; then
+    cat "$READY_STDERR_FILE" >&2
+  fi
+  rm -f "$READY_STDERR_FILE"
 
   CANDIDATE_IDS=()
   while IFS= read -r candidate_id; do
     [[ -n "$candidate_id" ]] && CANDIDATE_IDS+=("$candidate_id")
   done < <(
-    {
-      printf '%s\n' "$READY_JSON" |
-        grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' |
-        sed -E 's/^"id"[[:space:]]*:[[:space:]]*"//; s/"$//'
-    } || true
+    printf '%s\n' "$READY_JSON" |
+      jq -r '
+        if type == "array" then .[]
+        elif type == "object" then .
+        else empty
+        end
+        | .id? // empty
+      '
   )
 
   if ((${#CANDIDATE_IDS[@]} == 0)); then
@@ -74,13 +86,20 @@ for attempt in 1 2 3; do
   fi
 
   CANDIDATE_ID="${CANDIDATE_IDS[0]}"
-  if CLAIM_OUTPUT="$(bd update "$CANDIDATE_ID" --claim --json 2>&1)"; then
+  CLAIM_STDERR_FILE="$(mktemp)" || fail "Failed to allocate temporary file for bd update stderr."
+  if CLAIM_OUTPUT="$(bd update "$CANDIDATE_ID" --claim --json 2>"$CLAIM_STDERR_FILE")"; then
+    if [[ -s "$CLAIM_STDERR_FILE" ]]; then
+      cat "$CLAIM_STDERR_FILE" >&2
+    fi
+    rm -f "$CLAIM_STDERR_FILE"
     CLAIMED_ID="$CANDIDATE_ID"
     break
   fi
 
-  LAST_ERROR="$CLAIM_OUTPUT"
-  echo "Claim attempt $attempt/3 failed for bead $CANDIDATE_ID: $CLAIM_OUTPUT" >&2
+  CLAIM_ERROR="$(<"$CLAIM_STDERR_FILE")"
+  rm -f "$CLAIM_STDERR_FILE"
+  LAST_ERROR="${CLAIM_ERROR:-$CLAIM_OUTPUT}"
+  echo "Claim attempt $attempt/3 failed for bead $CANDIDATE_ID: $LAST_ERROR" >&2
 done
 
 [[ -n "$CLAIMED_ID" ]] || fail "Unable to claim a bead after 3 attempts. Last claim error: $LAST_ERROR"
@@ -109,4 +128,3 @@ activate_poetry_env_if_available
 export BEADS_DIR="$REPO_ROOT"
 
 codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it, close the bead when you're done"
-
