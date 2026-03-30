@@ -107,10 +107,18 @@ function Enable-PoetryActivationIfAvailable {
 }
 
 Require-Command git
-$repoRoot = (& git rev-parse --show-toplevel 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
-    Fail 'Not inside a git repository.'
+$repoResult = Invoke-NativeCommand -FilePath 'git' -Arguments @('rev-parse', '--show-toplevel')
+if ($repoResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($repoResult.StdOut)) {
+    $repoFailure = $repoResult.StdErr
+    if ([string]::IsNullOrWhiteSpace($repoFailure)) {
+        $repoFailure = $repoResult.StdOut
+    }
+    if ([string]::IsNullOrWhiteSpace($repoFailure)) {
+        Fail 'Not inside a git repository.'
+    }
+    Fail "Not inside a git repository. git rev-parse --show-toplevel failed: $repoFailure"
 }
+$repoRoot = $repoResult.StdOut
 
 Set-Location $repoRoot
 
@@ -118,10 +126,18 @@ foreach ($commandName in 'bd', 'codex') {
     Require-Command $commandName
 }
 
-$baseBranch = (& git symbolic-ref --quiet --short HEAD 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($baseBranch)) {
-    Fail 'Detached HEAD detected. Check out a branch before launching Codex.'
+$baseBranchResult = Invoke-NativeCommand -FilePath 'git' -Arguments @('symbolic-ref', '--quiet', '--short', 'HEAD')
+if ($baseBranchResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($baseBranchResult.StdOut)) {
+    $baseBranchFailure = $baseBranchResult.StdErr
+    if ([string]::IsNullOrWhiteSpace($baseBranchFailure)) {
+        $baseBranchFailure = $baseBranchResult.StdOut
+    }
+    if ([string]::IsNullOrWhiteSpace($baseBranchFailure)) {
+        Fail 'Detached HEAD detected. Check out a branch before launching Codex.'
+    }
+    Fail "Detached HEAD detected. git symbolic-ref --quiet --short HEAD failed: $baseBranchFailure"
 }
+$baseBranch = $baseBranchResult.StdOut
 
 $claimedId = $null
 $lastError = $null
@@ -178,14 +194,31 @@ if (Test-Path $worktreePath) {
 }
 
 # Fail instead of guessing whether reusing an existing agent branch is safe.
-& git show-ref --verify --quiet "refs/heads/$taskBranch"
-if ($LASTEXITCODE -eq 0) {
+$branchExistsResult = Invoke-NativeCommand -FilePath 'git' -Arguments @('show-ref', '--verify', '--quiet', "refs/heads/$taskBranch")
+if ($branchExistsResult.ExitCode -eq 0) {
     Fail "Branch already exists: $taskBranch"
 }
+if ($branchExistsResult.ExitCode -ne 1) {
+    $branchCheckFailure = $branchExistsResult.StdErr
+    if ([string]::IsNullOrWhiteSpace($branchCheckFailure)) {
+        $branchCheckFailure = $branchExistsResult.StdOut
+    }
+    if ([string]::IsNullOrWhiteSpace($branchCheckFailure)) {
+        $branchCheckFailure = "exit code $($branchExistsResult.ExitCode)"
+    }
+    Fail "Unable to verify whether branch exists: $taskBranch. git show-ref --verify --quiet failed: $branchCheckFailure"
+}
 
-& bd worktree create $worktreeRel -branch $taskBranch
-if ($LASTEXITCODE -ne 0) {
-    Fail "Failed to create worktree at $worktreePath"
+$worktreeCreateResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('worktree', 'create', $worktreeRel, '-branch', $taskBranch)
+if ($worktreeCreateResult.ExitCode -ne 0) {
+    $worktreeCreateFailure = $worktreeCreateResult.StdErr
+    if ([string]::IsNullOrWhiteSpace($worktreeCreateFailure)) {
+        $worktreeCreateFailure = $worktreeCreateResult.StdOut
+    }
+    if ([string]::IsNullOrWhiteSpace($worktreeCreateFailure)) {
+        $worktreeCreateFailure = "exit code $($worktreeCreateResult.ExitCode)"
+    }
+    Fail "Failed to create worktree at $worktreePath. bd worktree create failed: $worktreeCreateFailure"
 }
 
 Write-Host "Claimed bead: $claimedId"
