@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "codex_beads_windows",
+  "project_id": "854fa51f-54bf-4b27-89ed-1bb86d1e488f"
+}
