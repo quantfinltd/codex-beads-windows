@@ -183,7 +183,7 @@ if ($LASTEXITCODE -eq 0) {
     Fail "Branch already exists: $taskBranch"
 }
 
-& git worktree add $worktreeRel -b $taskBranch $baseBranch
+& bd worktree create $worktreeRel -branch $taskBranch
 if ($LASTEXITCODE -ne 0) {
     Fail "Failed to create worktree at $worktreePath"
 }

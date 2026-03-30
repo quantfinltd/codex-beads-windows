@@ -117,7 +117,7 @@ if git show-ref --verify --quiet "refs/heads/$TASK_BRANCH"; then
   fail "Branch already exists: $TASK_BRANCH"
 fi
 
-git worktree add "$WORKTREE_REL" -b "$TASK_BRANCH" "$BASE_BRANCH"
+bd worktree create "$WORKTREE_REL" -branch "$TASK_BRANCH"
 
 echo "Claimed bead: $CLAIMED_ID"
 echo "Base branch: $BASE_BRANCH"
