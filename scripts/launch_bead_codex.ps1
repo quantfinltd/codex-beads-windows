@@ -20,6 +20,65 @@ function Require-Command {
     }
 }
 
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @()
+    )
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = $FilePath
+    $process.StartInfo.Arguments = [string]::Join(' ', @($Arguments | ForEach-Object {
+        if ($_ -match '\s') {
+            '"' + ($_.Replace('"', '\"')) + '"'
+        } else {
+            $_
+        }
+    }))
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    [pscustomobject]@{
+        ExitCode = $process.ExitCode
+        StdOut = $stdout.Trim()
+        StdErr = $stderr.Trim()
+    }
+}
+
+function ConvertFrom-JsonPayload {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return @()
+    }
+
+    $trimmedText = $Text.Trim()
+    try {
+        return @($trimmedText | ConvertFrom-Json)
+    } catch {
+    }
+
+    $lines = @($trimmedText -split "`r?`n")
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index] -match '^\s*[\[{]') {
+            $candidate = ($lines[$index..($lines.Count - 1)] -join [Environment]::NewLine).Trim()
+            try {
+                return @($candidate | ConvertFrom-Json)
+            } catch {
+            }
+        }
+    }
+
+    Fail "Unable to parse JSON output: $trimmedText"
+}
+
 function Enable-PoetryActivationIfAvailable {
     if (-not (Test-Path (Join-Path $repoRoot 'pyproject.toml'))) {
         return
@@ -68,18 +127,16 @@ $claimedId = $null
 $lastError = $null
 
 for ($attempt = 1; $attempt -le 3 -and -not $claimedId; $attempt++) {
-    $readyJson = (& bd ready --json 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        Fail "bd ready --json failed: $readyJson"
+    $readyResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('ready', '--json')
+    if ($readyResult.ExitCode -ne 0) {
+        $readyFailure = $readyResult.StdErr
+        if ([string]::IsNullOrWhiteSpace($readyFailure)) {
+            $readyFailure = $readyResult.StdOut
+        }
+        Fail "bd ready --json failed: $readyFailure"
     }
 
-    $issues = @()
-    if (-not [string]::IsNullOrWhiteSpace($readyJson)) {
-        $parsed = $readyJson | ConvertFrom-Json
-        if ($null -ne $parsed) {
-            $issues = @($parsed)
-        }
-    }
+    $issues = ConvertFrom-JsonPayload -Text $readyResult.StdOut
 
     $candidateIds = @($issues | Where-Object { $_ -and $_.id } | ForEach-Object { [string]$_.id })
     if ($candidateIds.Count -eq 0) {
@@ -90,14 +147,17 @@ for ($attempt = 1; $attempt -le 3 -and -not $claimedId; $attempt++) {
     }
 
     $candidateId = $candidateIds[0]
-    $claimOutput = (& bd update $candidateId --claim --json 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -eq 0) {
+    $claimResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('update', $candidateId, '--claim', '--json')
+    if ($claimResult.ExitCode -eq 0) {
         $claimedId = $candidateId
         break
     }
 
-    $lastError = $claimOutput
-    Write-Warning "Claim attempt $attempt/3 failed for bead ${candidateId}: $claimOutput"
+    $lastError = $claimResult.StdErr
+    if ([string]::IsNullOrWhiteSpace($lastError)) {
+        $lastError = $claimResult.StdOut
+    }
+    Write-Warning "Claim attempt $attempt/3 failed for bead ${candidateId}: $lastError"
 }
 
 if (-not $claimedId) {
