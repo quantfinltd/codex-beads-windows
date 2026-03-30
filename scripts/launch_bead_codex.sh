@@ -125,6 +125,4 @@ echo "Worktree: $WORKTREE_PATH"
 
 activate_poetry_env_if_available
 
-export BEADS_DIR="$REPO_ROOT"
-
 codex --cd "$WORKTREE_REL" "bead $CLAIMED_ID has been claimed for you to work on in the current git branch and worktree, please work on it, close the bead when you're done"
