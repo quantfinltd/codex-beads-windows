@@ -143,7 +143,7 @@ $claimedId = $null
 $lastError = $null
 
 for ($attempt = 1; $attempt -le 3 -and -not $claimedId; $attempt++) {
-    $readyResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('ready', '--exclude-type', 'epic' '--json')
+    $readyResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('ready', '--exclude-type', 'epic', '--json')
     if ($readyResult.ExitCode -ne 0) {
         $readyFailure = $readyResult.StdErr
         if ([string]::IsNullOrWhiteSpace($readyFailure)) {
