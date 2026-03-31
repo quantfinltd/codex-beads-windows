@@ -54,10 +54,10 @@ LAST_ERROR=""
 
 for attempt in 1 2 3; do
   READY_STDERR_FILE="$(mktemp)" || fail "Failed to allocate temporary file for bd ready stderr."
-  if ! READY_JSON="$(bd ready --json 2>"$READY_STDERR_FILE")"; then
+  if ! READY_JSON="$(bd ready --exclude-type epic --json 2>"$READY_STDERR_FILE")"; then
     READY_ERROR="$(<"$READY_STDERR_FILE")"
     rm -f "$READY_STDERR_FILE"
-    fail "bd ready --json failed: ${READY_ERROR:-$READY_JSON}"
+    fail "bd ready --exclude-type epic --json failed: ${READY_ERROR:-$READY_JSON}"
   fi
   if [[ -s "$READY_STDERR_FILE" ]]; then
     cat "$READY_STDERR_FILE" >&2

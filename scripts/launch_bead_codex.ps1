@@ -143,13 +143,13 @@ $claimedId = $null
 $lastError = $null
 
 for ($attempt = 1; $attempt -le 3 -and -not $claimedId; $attempt++) {
-    $readyResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('ready', '--json')
+    $readyResult = Invoke-NativeCommand -FilePath 'bd' -Arguments @('ready', '--exclude-type', 'epic', '--json')
     if ($readyResult.ExitCode -ne 0) {
         $readyFailure = $readyResult.StdErr
         if ([string]::IsNullOrWhiteSpace($readyFailure)) {
             $readyFailure = $readyResult.StdOut
         }
-        Fail "bd ready --json failed: $readyFailure"
+        Fail "bd ready --exclude-type epic --json failed: $readyFailure"
     }
 
     $issues = ConvertFrom-JsonPayload -Text $readyResult.StdOut
